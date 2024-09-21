@@ -50,7 +50,8 @@ func main() {
 
 	// finally, define a map of Repo's for our organized data
 	organizedTests := make(map[string]Repo)
-	testCount := 0
+	totalTestCount := 0
+	totalSpecCount := 0
 	fileContentRequestCount := 0
 
 	// create an array of our Article structs 
@@ -77,11 +78,11 @@ func main() {
 		repoName := spec.Repository.NameWithOwner
 
 		// create an array of Specs, later used as organizedTests[repoName].Specs
-		var repoSpecs []Spec;
+		var repoSpecs []Spec
 		// if repo already in organizedTests, need to initialize repoSpecs with existing specs before adding to it
 		if val, ok := organizedTests[repoName]; ok {
 			// logging to help with debugging
-			// fmt.Printf("Repo %s already exists in organized tests!\n", val.RepoName);
+			// fmt.Printf("Repo %s already exists in organized tests!\n", val.RepoName)
 
 			// populate repoSpecs with existing specs for the repo before adding new
 			repoSpecs = val.Specs
@@ -133,7 +134,7 @@ func main() {
 				Name: match[1],
 			})
 			// increment test count and log test added to spec
-			testCount++
+			totalTestCount++
 			// fmt.Printf("Added test %s \nto spec %s \n", match[1], currSpec.Path)
 		}
 		repoSpecs = append(repoSpecs, currSpec)
@@ -150,30 +151,50 @@ func main() {
 		// fmt.Printf("Added/Updated repo %s\n", repoName)
 	}
 	// done processing - log totals
-	fmt.Printf("%d requests made to github api to fetch file contents\n", fileContentRequestCount);
-	fmt.Printf("%d tests were found in %d repos and written to ./organizedTests.csv\n", testCount, len(organizedTests));
+	fmt.Printf("%d requests made to github api to fetch file contents\n", fileContentRequestCount)
+	fmt.Printf("%d tests were found in %d repos and written to ./organizedTests.csv\n", totalTestCount, len(organizedTests))
 	// ok now how do I write that nice struct out to a csv file?
 	// start by creating the array of arrays of strings I'd like to write to the file
 	var result [][]string
 	// first el in the array will be our header row
-	header := []string{"Repo","Spec","Test","Url"}
+	header := []string{"Repo","Spec","Test"}
 	result = append(result,header)
+	// gonna store some summary data here and append it at the end of the file
+	var summaryData [][]string
 	// loop through repos in organized tests 
 	for _, repo := range organizedTests {
-		repoName := repo.RepoName;
+		repoTestCount := 0
+		repoName := repo.RepoName
 		// loop through specs for each repo
 		for _, spec := range repo.Specs {
+			totalSpecCount++
 			specPath := spec.Path
 			specUrl := spec.Url
 			// loop through tests for each spec
 			for _, test := range spec.Tests {
+				// increment count of tests for repo summary data row
+				repoTestCount++
 				testName := test.Name
-				// add an el to our array for the test in the current loop
-				row := []string{repoName,specPath,testName,specUrl}
+				// add an el to our array for the test in the current loop - spec path will hyperlink to spec
+				row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specUrl), fmt.Sprintf("\"%s\"", specPath)), testName}
 				result = append(result, row)
 			}
 		}
+		// store summary data for the repo
+		summaryData = append(summaryData, []string{
+			fmt.Sprintf("Summary Data for repo %s:", repoName),
+			fmt.Sprintf("Spec Count: %d", len(repo.Specs)),
+			fmt.Sprintf("Test Count: %d", repoTestCount),
+		})
 	}
+
+	// append summary data to end of csv data
+	result = append(result, summaryData...)
+	result = append(result, []string{
+			fmt.Sprintf("Total Repo Count: %d", len(organizedTests)),
+			fmt.Sprintf("Total Spec Count: %d", totalSpecCount),
+			fmt.Sprintf("Total Test Count: %d", totalTestCount),
+		})
 
 	// Create a new csv file
 	f, err := os.Create("organizedTests.csv")
