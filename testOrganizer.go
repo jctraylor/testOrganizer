@@ -10,6 +10,8 @@ import (
 	"github.com/cli/go-gh/v2"
 	"github.com/cli/go-gh/v2/pkg/api"
 	"net/http"
+	"strings"
+	"sort"
 )
 
 func main() {
@@ -40,6 +42,7 @@ func main() {
 		Path string
 		Url string
 		Tests []Test
+		Type string
 	}
 
 	// define a repo struct, that will contain an array of Specs in that repo
@@ -47,8 +50,7 @@ func main() {
 		RepoName string
 		Specs []Spec
 	}
-
-	// finally, define a map of Repo's for our organized data
+	// define a map of Repo's for our organized data
 	organizedTests := make(map[string]Repo)
 	totalTestCount := 0
 	totalSpecCount := 0
@@ -75,7 +77,8 @@ func main() {
 	// we now have an array of specs in articles
 	// lets loop thru it searching each for tests, and writing those to our csv
 	for _, spec := range articles {
-		repoName := spec.Repository.NameWithOwner
+		// strip "BidPal/phaas-" from repo name we will write to the file
+		repoName := strings.SplitAfterN(spec.Repository.NameWithOwner, "-", 2)[1]
 
 		// create an array of Specs, later used as organizedTests[repoName].Specs
 		var repoSpecs []Spec
@@ -89,14 +92,25 @@ func main() {
 		}
 		// now carry on - repoSpecs will be empty if organizedTests[repoName] didn't exist already
 
+		// regex to match "smoke" or "integration" literally from spec path
+		typeRegex, err := regexp.Compile(`smoke|integration`) 
+		if err != nil {
+			fmt.Println(err)
+		}
+		specType := typeRegex.FindString(spec.Path)
+		// default to integration if niether smoke nor integraiton found in path
+		if (len(specType) == 0) {
+			specType = "integration"
+		}
 		// create a Spec for the current match that will be appended to repoSpecs later
 		currSpec := Spec{
 			Path: spec.Path,
 			Url: spec.Url,
+			Type:  specType,
 		}
 
 		// fetch the content of the current spec
-		path := fmt.Sprintf("repos/%s/contents/%s", repoName, spec.Path)
+		path := fmt.Sprintf("repos/%s/contents/%s", spec.Repository.NameWithOwner, spec.Path)
 			opts := api.ClientOptions{
 			Headers:   map[string]string{"Accept": "application/vnd.github.v3.raw","X-GitHub-Api-Version": "2022-11-28"},
 		}
@@ -157,16 +171,22 @@ func main() {
 	// start by creating the array of arrays of strings I'd like to write to the file
 	var result [][]string
 	// first el in the array will be our header row
-	header := []string{"Repo","Spec","Test"}
+	header := []string{"Repo","Spec","Type","Test"}
 	result = append(result,header)
 	// gonna store some summary data here and append it at the end of the file
 	var summaryData [][]string
-	// loop through repos in organized tests 
-	for _, repo := range organizedTests {
+	// create a slice of the keys in oranizedTests, and sort it
+	repos := make([]string, 0, len(organizedTests))
+	for k := range organizedTests {
+		repos = append(repos, k)
+	}
+	sort.Strings(repos)
+	// then iterate through this sorted list of keys writing tests to the csv
+	for _, repo := range repos {
 		repoTestCount := 0
-		repoName := repo.RepoName
+		repoName := organizedTests[repo].RepoName
 		// loop through specs for each repo
-		for _, spec := range repo.Specs {
+		for _, spec := range organizedTests[repo].Specs {
 			totalSpecCount++
 			specPath := spec.Path
 			specUrl := spec.Url
@@ -176,14 +196,14 @@ func main() {
 				repoTestCount++
 				testName := test.Name
 				// add an el to our array for the test in the current loop - spec path will hyperlink to spec
-				row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specUrl), fmt.Sprintf("\"%s\"", specPath)), testName}
+				row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specUrl), fmt.Sprintf("\"%s\"", specPath)), spec.Type, testName}
 				result = append(result, row)
 			}
 		}
 		// store summary data for the repo
 		summaryData = append(summaryData, []string{
 			fmt.Sprintf("Summary Data for repo %s:", repoName),
-			fmt.Sprintf("Spec Count: %d", len(repo.Specs)),
+			fmt.Sprintf("Spec Count: %d", len(organizedTests[repo].Specs)),
 			fmt.Sprintf("Test Count: %d", repoTestCount),
 		})
 	}
