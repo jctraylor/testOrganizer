@@ -35,6 +35,7 @@ type Article struct {
 // define a test struct  - each Spec will have an array of these
 type Test struct {
 	Name string
+	Skipped bool
 }
 
 // define a spec struct - each repo will contain an array of these
@@ -54,7 +55,9 @@ type Repo struct {
 // initialize these counts globally and increment where needed
 var totalTestCount = 0
 var totalSpecCount = 0
+var totalSkippedTestCount = 0
 var repoTestCount = 0
+var repoSkippedTestCount = 0
 var fileContentRequestCount = 0
 
 func main() {
@@ -87,8 +90,13 @@ func main() {
 		// find strings that look like tests names in the file content
 		matches := findTests(fileContent)
 		for _, match := range matches {
+			skipped := isMatchSkippedTest(match)
+			if (skipped) {
+				totalSkippedTestCount++
+			}
 			currSpec.Tests = append(currSpec.Tests, Test{
 				Name: match[1],
+				Skipped: skipped,
 			})
 			// increment test count and log test added to spec
 			totalTestCount++
@@ -190,23 +198,26 @@ func fetchSpecContent(spec Article, repoName string) string {
 
 func findTests(fileContent string) [][]string {
 	// create regexp object we'll use to filter out search results that aren't actually its
-	// this pattern matches on whitespace, followed by "it(" followed by either `, ", or ',
+	// this pattern matches on whitespace OR 'x', followed by "it(" followed by either `, ", or ',
 	// then it captures everything after the single/double quote or backtick up to the next single/double quote or backtick
 	// which should give us the test name (\x60 is backtick)
-	re, err := regexp.Compile(`\s+it\(["'\x60]([^"'\x60]+)["'\x60]`) 
+	re, err := regexp.Compile(`[\sx]+it\(["'\x60]([^"'\x60]+)["'\x60]`) 
 	if err != nil {
 		fmt.Println(err)
 	}
 	return re.FindAllStringSubmatch(fileContent, -1)
 }
 
-func createCSVRowForTest (spec Spec, repoName string, testName string) []string {
+func createCSVRowForTest (spec Spec, repoName string, testName string, testSkipped bool) []string {
 	specPath := spec.Path
 	specUrl := spec.Url
 	// increment count of tests for repo summary data row
 	repoTestCount++
+	if (testSkipped) {
+		repoSkippedTestCount++
+	}
 	//  - spec path will hyperlink to spec
-	row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specUrl), fmt.Sprintf("\"%s\"", specPath)), spec.Type, testName}
+	row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specUrl), fmt.Sprintf("\"%s\"", specPath)), spec.Type, testName, fmt.Sprintf("%t", testSkipped)}
 	return row;
 }
 
@@ -214,7 +225,7 @@ func buildCSVRows (organizedTests map[string]Repo) [][]string {
 	var csvRows [][]string
 	var summaryData [][]string
  	// first el in the array will be our header row
-	header := []string{"Repo","Spec","Type","Test"}
+	header := []string{"Repo","Spec","Type","Test","Test Skipped"}
 	csvRows = append(csvRows,header)
 	
 	// create a slice of the keys in oranizedTests, and sort it
@@ -226,13 +237,14 @@ func buildCSVRows (organizedTests map[string]Repo) [][]string {
 	// then iterate through this sorted list of keys writing tests to the csv
 	for _, repo := range repos {
 		repoTestCount = 0
+		repoSkippedTestCount = 0
 		repoName := organizedTests[repo].RepoName
 		// loop through specs for each repo
 		for _, spec := range organizedTests[repo].Specs {
 			totalSpecCount++
 			for _, test := range spec.Tests {
 				// add a row to our csv data for each test
-				csvRows = append(csvRows, createCSVRowForTest(spec, repoName, test.Name))
+				csvRows = append(csvRows, createCSVRowForTest(spec, repoName, test.Name, test.Skipped))
 			}
 		}
 
@@ -241,6 +253,7 @@ func buildCSVRows (organizedTests map[string]Repo) [][]string {
 			fmt.Sprintf("Summary Data for repo %s:", repoName),
 			fmt.Sprintf("Spec Count: %d", len(organizedTests[repo].Specs)),
 			fmt.Sprintf("Test Count: %d", repoTestCount),
+			fmt.Sprintf("Skipped Test Count: %d", repoSkippedTestCount),
 		})
 	}
 
@@ -250,6 +263,7 @@ func buildCSVRows (organizedTests map[string]Repo) [][]string {
 			fmt.Sprintf("Total Repo Count: %d", len(organizedTests)),
 			fmt.Sprintf("Total Spec Count: %d", totalSpecCount),
 			fmt.Sprintf("Total Test Count: %d", totalTestCount),
+			fmt.Sprintf("Total Skipped Test Count: %d", totalSkippedTestCount),
 		})
 
 	return csvRows
@@ -273,4 +287,12 @@ func writeCSV (csvRows [][]string) {
 		fmt.Println("Error writing to file:", err)
 		return
 	}
+}
+
+func isMatchSkippedTest (match []string) bool {
+	re, err := regexp.Compile(`xit`) 
+			if err != nil {
+				fmt.Println(err)
+			}
+			return re.Match([]byte(match[0]))
 }
