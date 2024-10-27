@@ -15,38 +15,39 @@ import (
 	"time"
 )
 
-// define a struct for Repository object
+// Repository struct holds data in Respository object included with each search result
 type Repository struct {
-	Id            string `json:"id"`
+	ID            string `json:"id"`
 	IsFork        bool `json:"isFork"`
 	IsPrivate     bool `json:"isPrivate"`
 	NameWithOwner string `json:"nameWithOwner"`
-	Url           string `json:"url"`
+	URL           string `json:"url"`
 }
 
-// define a struct for each match from gh cli search command
+// Article is a struct for each match from gh cli search command
 type Article struct {
 	Path        string `json:"path"`
 	Repository  Repository `json:"repository"`
-	Url         string `json:"url"`
+	URL         string `json:"url"`
 }
 
 // define types used in our struct for our organized data output
-// define a test struct  - each Spec will have an array of these
+
+// Test struct  - each Spec will have an array of these
 type Test struct {
 	Name string
 	Skipped bool
 }
 
-// define a spec struct - each repo will contain an array of these
+// Spec struct - each repo will contain an array of these
 type Spec struct {
 	Path string
-	Url string
+	URL string
 	Tests []Test
 	Type string
 }
 
-// define a repo struct, that will contain an array of Specs in that repo
+//Repo struct, that will contain an array of Specs in a given repo
 type Repo struct {
 	RepoName string
 	Specs []Spec
@@ -143,7 +144,7 @@ func initSpec(spec Article) Spec {
 		// return a Spec for the current match that will be appended to repoSpecs later
 		return Spec{
 			Path: spec.Path,
-			Url: spec.Url,
+			URL: spec.URL,
 			Type:  specType,
 		}
 }
@@ -210,14 +211,14 @@ func findTests(fileContent string) [][]string {
 
 func createCSVRowForTest (spec Spec, repoName string, testName string, testSkipped bool) []string {
 	specPath := spec.Path
-	specUrl := spec.Url
+	specURL := spec.URL
 	// increment count of tests for repo summary data row
 	repoTestCount++
 	if (testSkipped) {
 		repoSkippedTestCount++
 	}
 	//  - spec path will hyperlink to spec
-	row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specUrl), fmt.Sprintf("\"%s\"", specPath)), spec.Type, testName, fmt.Sprintf("%t", testSkipped)}
+	row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specURL), fmt.Sprintf("\"%s\"", specPath)), spec.Type, testName, fmt.Sprintf("%t", testSkipped)}
 	return row;
 }
 
