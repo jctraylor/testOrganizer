@@ -1,18 +1,19 @@
 package main
 
 import (
-	"fmt"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"regexp"
+	"sort"
+	"strings"
+	"time"
+
 	"github.com/cli/go-gh/v2"
 	"github.com/cli/go-gh/v2/pkg/api"
-	"net/http"
-	"strings"
-	"sort"
-	"time"
 )
 
 // Repository struct holds data in Respository object included with each search result
@@ -39,11 +40,19 @@ type Test struct {
 	Skipped bool
 }
 
+// Describe struct - contains text of describe and if it is skipped
+type Describe struct {
+	Text string
+	Skipped bool
+}
+
 // Spec struct - each repo will contain an array of these
 type Spec struct {
 	Path string
 	URL string
 	Tests []Test
+	Describes []Describe
+	HasSkippedDescribe bool
 	Type string
 }
 
@@ -88,21 +97,41 @@ func main() {
 		// fetch the content of the current spec
 		fileContent := fetchSpecContent(spec, repoName)
 		fileContentRequestCount++
-		// find strings that look like tests names in the file content
-		matches := findTests(fileContent)
-		for _, match := range matches {
-			skipped := isMatchSkippedTest(match)
-			if (skipped) {
+		// create regexp objects we'll use to find it's and describes
+		// this pattern matches on whitespace OR 'x', followed by "it(" or "describe(" followed by either `, ", or ',
+		// then it captures everything after the single/double quote or backtick up to the next single/double quote or backtick
+		// which should give us the test/describe text (\x60 is backtick)
+		foundTests := getRegexMatches(fileContent, `[\sx]+it\(["'\x60]([^"'\x60]+)["'\x60]`)
+		specDescribes := getRegexMatches(fileContent, `[\sx]+describe\(["'\x60]([^"'\x60]+)["'\x60]`)
+		// default to false?
+		specHasSkippedDescribe := false
+		if (len(specDescribes) > 1) {
+			fmt.Printf("Spec %s has more than 1 describe - that wasn't expected and won't be handled very well\n", currSpec.Path)
+		} else if (len(specDescribes) == 0) {
+			fmt.Printf("Spec %s has 0 describes - that wasn't expected and won't be handled very well\n", currSpec.Path)
+		} 
+		for index, describe := range specDescribes {
+			isThisMatchSkipped := isMatchSkipped(describe)
+			specHasSkippedDescribe = specHasSkippedDescribe || isThisMatchSkipped
+			currSpec.Describes = append(currSpec.Describes, Describe{
+				Text: specDescribes[index][1],
+				Skipped: isThisMatchSkipped,
+			})
+		}
+		for _, test := range foundTests {
+			skipped := isMatchSkipped(test)
+			if (skipped || specHasSkippedDescribe) {
 				totalSkippedTestCount++
 			}
 			currSpec.Tests = append(currSpec.Tests, Test{
-				Name: match[1],
-				Skipped: skipped,
+				Name: test[1],
+				Skipped: skipped || specHasSkippedDescribe,
 			})
 			// increment test count and log test added to spec
 			totalTestCount++
 			// fmt.Printf("Added test %s \nto spec %s \n", match[1], currSpec.Path)
 		}
+		currSpec.HasSkippedDescribe = specHasSkippedDescribe
 		repoSpecs = append(repoSpecs, currSpec)
 		// log when spec is added
 		// fmt.Printf("Added spec %s \nto repo %s \n", currSpec.Path, repoName)
@@ -197,19 +226,15 @@ func fetchSpecContent(spec Article, repoName string) string {
 	return string(resBody)
 }
 
-func findTests(fileContent string) [][]string {
-	// create regexp object we'll use to filter out search results that aren't actually its
-	// this pattern matches on whitespace OR 'x', followed by "it(" followed by either `, ", or ',
-	// then it captures everything after the single/double quote or backtick up to the next single/double quote or backtick
-	// which should give us the test name (\x60 is backtick)
-	re, err := regexp.Compile(`[\sx]+it\(["'\x60]([^"'\x60]+)["'\x60]`) 
+func getRegexMatches(fileContent string, pattern string) [][]string {
+	testsRegexp, err := regexp.Compile(pattern)
 	if err != nil {
 		fmt.Println(err)
 	}
-	return re.FindAllStringSubmatch(fileContent, -1)
+	return testsRegexp.FindAllStringSubmatch(fileContent, -1)
 }
 
-func createCSVRowForTest (spec Spec, repoName string, testName string, testSkipped bool) []string {
+func createCSVRowForTest (spec Spec, repoName string, testName string, testSkipped bool, specHasSkippedDescribe bool) []string {
 	specPath := spec.Path
 	specURL := spec.URL
 	// increment count of tests for repo summary data row
@@ -218,7 +243,7 @@ func createCSVRowForTest (spec Spec, repoName string, testName string, testSkipp
 		repoSkippedTestCount++
 	}
 	//  - spec path will hyperlink to spec
-	row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specURL), fmt.Sprintf("\"%s\"", specPath)), spec.Type, testName, fmt.Sprintf("%t", testSkipped)}
+	row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specURL), fmt.Sprintf("\"%s\"", specPath)), spec.Type, testName, fmt.Sprintf("%t", testSkipped), fmt.Sprintf("%t", spec.HasSkippedDescribe)}
 	return row;
 }
 
@@ -226,7 +251,7 @@ func buildCSVRows (organizedTests map[string]Repo) [][]string {
 	var csvRows [][]string
 	var summaryData [][]string
  	// first el in the array will be our header row
-	header := []string{"Repo","Spec","Type","Test","Test Skipped"}
+	header := []string{"Repo","Spec","Type","Test","Test Skipped","Spec Has Skipped Describe"}
 	csvRows = append(csvRows,header)
 	
 	// create a slice of the keys in oranizedTests, and sort it
@@ -245,7 +270,7 @@ func buildCSVRows (organizedTests map[string]Repo) [][]string {
 			totalSpecCount++
 			for _, test := range spec.Tests {
 				// add a row to our csv data for each test
-				csvRows = append(csvRows, createCSVRowForTest(spec, repoName, test.Name, test.Skipped))
+				csvRows = append(csvRows, createCSVRowForTest(spec, repoName, test.Name, test.Skipped, spec.HasSkippedDescribe))
 			}
 		}
 
@@ -290,8 +315,8 @@ func writeCSV (csvRows [][]string) {
 	}
 }
 
-func isMatchSkippedTest (match []string) bool {
-	re, err := regexp.Compile(`xit`) 
+func isMatchSkipped (match []string) bool {
+	re, err := regexp.Compile(`xit|xdescribe`) 
 			if err != nil {
 				fmt.Println(err)
 			}
