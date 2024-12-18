@@ -237,7 +237,7 @@ func createCSVRowForTest(spec Spec, repoName string, test Test) []string {
 		repoSkippedTestCount++
 	}
 	//  - spec path will hyperlink to spec
-	row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specURL), fmt.Sprintf("\"%s\"", specPath)), spec.Type, test.Describe, test.Name, fmt.Sprintf("%t", test.TestSkipped), fmt.Sprintf("%t", test.DescribeSkipped)}
+	row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specURL), fmt.Sprintf("\"%s\"", specPath)), spec.Type, test.Describe, test.Name, fmt.Sprintf("%t", test.DescribeSkipped), fmt.Sprintf("%t", test.TestSkipped)}
 	return row;
 }
 
@@ -245,7 +245,7 @@ func buildCSVRows(organizedTests map[string]Repo) [][]string {
 	var csvRows [][]string
 	var summaryData [][]string
  	// first el in the array will be our header row
-	header := []string{"Repo","Spec","Type","Describe","Test","Test Skipped","Describe Skipped"}
+	header := []string{"Repo","Spec","Type","Describe","Test","Describe Skipped","Test Skipped"}
 	csvRows = append(csvRows,header)
 	
 	// create a slice of the keys in oranizedTests, and sort it
