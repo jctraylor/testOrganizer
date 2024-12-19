@@ -169,49 +169,44 @@ func initSpec(spec Article) Spec {
 			Type:  specType,
 		}
 }
+// run the gh cli search command and return the result
+func runSearchCommand(extension string) []Article {
+	var searchResults []Article
 
-// run the search command and store the result - wonder when the limit of 500 will become a problem
-func fetchSpecs() []Article {
-	// create an array of our Article structs 
-	var articles []Article
-	var articles2 []Article
-
-	// TODO: maybe pull this search into a function now that we have to do it twice?
-	fmt.Println("Executing command: gh search code org:BidPal --extension cy.js -L 500 --json repository,path,url")
-	buff, _, err := gh.Exec("search", "code", "org:BidPal", "--extension", "cy.js", "-L", "500", "--json", "repository,path,url")
-
-	if (err != nil) {
-			fmt.Printf("Error running gh search command: %s", err)
-	}
-
-	// now doing a second search for ts files - don't love this
-	fmt.Println("Executing command: gh search code org:BidPal --extension cy.ts -L 500 --json repository,path,url")
-	buff2, _, err := gh.Exec("search", "code", "org:BidPal", "--extension", "cy.ts", "-L", "500", "--json", "repository,path,url")
+	// wonder when the limit of 500 will become a problem
+	fmt.Printf("Executing command: gh search code org:BidPal --extension %s -L 500 --json repository,path,url\n", extension)
+	buff, _, err := gh.Exec("search", "code", "org:BidPal", "--extension", extension, "-L", "500", "--json", "repository,path,url")
 
 	if (err != nil) {
 			fmt.Printf("Error running gh search command: %s", err)
 	}
 
 	// TODO: xerr is bad?
-	xerr := json.Unmarshal([]byte(buff.Bytes()), &articles)
+	xerr := json.Unmarshal([]byte(buff.Bytes()), &searchResults)
 	if xerr != nil {
 		fmt.Printf("Error unmarshalling search results to struct array: %s", xerr)
 	}
 
-	// TODO: xerr2 is also bad?
-	xerr2 := json.Unmarshal([]byte(buff2.Bytes()), &articles2)
-	if xerr2 != nil {
-		fmt.Printf("Error unmarshalling search results to struct array: %s", xerr)
-	}
+	return searchResults;
+}
 
-	jsSpecCount += len(articles)
-	tsSpecCount += len(articles2)
+
+func fetchSpecs() []Article {
+	jsSpecs := runSearchCommand("cy.js")
+	tsSpecs := runSearchCommand("cy.ts")
+
+	// create an array of our Article structs to hold everything we fetch
+	var articles []Article
+
+	jsSpecCount += len(jsSpecs)
+	tsSpecCount += len(tsSpecs)
+
+	fmt.Printf("Search found %d specs. Processing...\n", jsSpecCount + tsSpecCount)
 
 	// now put all the specs ts and js into articles and continue
-	articles = append(articles, articles2...)
-
-	fmt.Printf("Search found %d specs. Processing...\n", len(articles))
-
+	// seems like there should be a more efficient way to do this
+	articles = append(articles, jsSpecs...)
+	articles = append(articles, tsSpecs...)
 	return articles
 }
 
