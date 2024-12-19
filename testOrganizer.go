@@ -63,6 +63,8 @@ var totalSkippedTestCount = 0
 var repoTestCount = 0
 var repoSkippedTestCount = 0
 var fileContentRequestCount = 0
+var jsSpecCount = 0
+var tsSpecCount = 0
 
 func main() {
 	start := time.Now()
@@ -172,8 +174,19 @@ func initSpec(spec Article) Spec {
 func fetchSpecs() []Article {
 	// create an array of our Article structs 
 	var articles []Article
+	var articles2 []Article
+
+	// TODO: maybe pull this search into a function now that we have to do it twice?
 	fmt.Println("Executing command: gh search code org:BidPal --extension cy.js -L 500 --json repository,path,url")
 	buff, _, err := gh.Exec("search", "code", "org:BidPal", "--extension", "cy.js", "-L", "500", "--json", "repository,path,url")
+
+	if (err != nil) {
+			fmt.Printf("Error running gh search command: %s", err)
+	}
+
+	// now doing a second search for ts files - don't love this
+	fmt.Println("Executing command: gh search code org:BidPal --extension cy.ts -L 500 --json repository,path,url")
+	buff2, _, err := gh.Exec("search", "code", "org:BidPal", "--extension", "cy.ts", "-L", "500", "--json", "repository,path,url")
 
 	if (err != nil) {
 			fmt.Printf("Error running gh search command: %s", err)
@@ -184,6 +197,18 @@ func fetchSpecs() []Article {
 	if xerr != nil {
 		fmt.Printf("Error unmarshalling search results to struct array: %s", xerr)
 	}
+
+	// TODO: xerr2 is also bad?
+	xerr2 := json.Unmarshal([]byte(buff2.Bytes()), &articles2)
+	if xerr2 != nil {
+		fmt.Printf("Error unmarshalling search results to struct array: %s", xerr)
+	}
+
+	jsSpecCount += len(articles)
+	tsSpecCount += len(articles2)
+
+	// now put all the specs ts and js into articles and continue
+	articles = append(articles, articles2...)
 
 	fmt.Printf("Search found %d specs. Processing...\n", len(articles))
 
@@ -281,7 +306,7 @@ func buildCSVRows(organizedTests map[string]Repo) [][]string {
 	csvRows = append(csvRows, summaryData...)
 	csvRows = append(csvRows, []string{
 			fmt.Sprintf("Total Repo Count: %d", len(organizedTests)),
-			fmt.Sprintf("Total Spec Count: %d", totalSpecCount),
+			fmt.Sprintf("Total Spec Count: %d (%d js files / %d ts files)", totalSpecCount, jsSpecCount, tsSpecCount),
 			fmt.Sprintf("Total Test Count: %d", totalTestCount),
 			fmt.Sprintf("Total Skipped Test Count: %d", totalSkippedTestCount),
 		})
@@ -290,7 +315,9 @@ func buildCSVRows(organizedTests map[string]Repo) [][]string {
 }
 
 func writeCSV(csvRows [][]string) {
-	f, err := os.Create("organizedTests.csv")
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	fileName := "organizedTests-" + timestamp + ".csv"
+	f, err := os.Create(fileName)
 	if err != nil {
 		fmt.Println("Error creating file:", err)
 		return
