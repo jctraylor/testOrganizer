@@ -58,10 +58,12 @@ type Repo struct {
 
 // initialize these counts globally and increment where needed
 var totalTestCount = 0
+var totalWIPTestCount = 0
 var totalSpecCount = 0
 var totalSkippedTestCount = 0
 var repoTestCount = 0
 var repoSkippedTestCount = 0
+var repoWIPTestCount = 0
 var fileContentRequestCount = 0
 var jsSpecCount = 0
 var tsSpecCount = 0
@@ -113,6 +115,9 @@ func main() {
 				if (isTestSkipped || isThisDescribeSkipped) {
 					totalSkippedTestCount++
 				}
+				if (currSpec.Type == "WIP") {
+					totalWIPTestCount++
+				}
 				currSpec.Tests = append(currSpec.Tests, Test{
 					Describe: describeText[1],
 					Name: test[1],
@@ -152,8 +157,8 @@ func main() {
 }
 
 func initSpec(spec Article) Spec {
-		// regex to match "smoke" or "integration" literally from spec path
-		typeRegex, err := regexp.Compile(`smoke|integration`) 
+		// regex to match "smoke", "integration", or "wip" literally from spec path - case insensitive
+		typeRegex, err := regexp.Compile("(?i)smoke|integration|wip") 
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -161,6 +166,10 @@ func initSpec(spec Article) Spec {
 		// default to integration if niether smoke nor integraiton found in path
 		if (len(specType) == 0) {
 			specType = "integration"
+		}
+		// capitalize type if wip
+		if (specType == "wip") {
+			specType = strings.ToUpper(specType)
 		}
 		// return a Spec for the current match that will be appended to repoSpecs later
 		return Spec{
@@ -256,6 +265,9 @@ func createCSVRowForTest(spec Spec, repoName string, test Test) []string {
 	if (test.TestSkipped || test.DescribeSkipped) {
 		repoSkippedTestCount++
 	}
+	if (spec.Type == "WIP") {
+		repoWIPTestCount++
+	}
 	//  - spec path will hyperlink to spec
 	row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specURL), fmt.Sprintf("\"%s\"", specPath)), spec.Type, test.Describe, test.Name, fmt.Sprintf("%t", test.DescribeSkipped), fmt.Sprintf("%t", test.TestSkipped)}
 	return row;
@@ -276,8 +288,10 @@ func buildCSVRows(organizedTests map[string]Repo) [][]string {
 	sort.Strings(repos)
 	// then iterate through this sorted list of keys writing tests to the csv
 	for _, repo := range repos {
+		// reset these repo counts each time we start processing a new repo
 		repoTestCount = 0
 		repoSkippedTestCount = 0
+		repoWIPTestCount = 0
 		repoName := organizedTests[repo].RepoName
 		// loop through specs for each repo
 		for _, spec := range organizedTests[repo].Specs {
@@ -294,6 +308,7 @@ func buildCSVRows(organizedTests map[string]Repo) [][]string {
 			fmt.Sprintf("Spec Count: %d", len(organizedTests[repo].Specs)),
 			fmt.Sprintf("Test Count: %d", repoTestCount),
 			fmt.Sprintf("Skipped Test Count: %d", repoSkippedTestCount),
+			fmt.Sprintf("WIP Test Count: %d", repoWIPTestCount),
 		})
 	}
 
@@ -304,6 +319,7 @@ func buildCSVRows(organizedTests map[string]Repo) [][]string {
 			fmt.Sprintf("Total Spec Count: %d (%d js files / %d ts files)", totalSpecCount, jsSpecCount, tsSpecCount),
 			fmt.Sprintf("Total Test Count: %d", totalTestCount),
 			fmt.Sprintf("Total Skipped Test Count: %d", totalSkippedTestCount),
+			fmt.Sprintf("Total WIP Test Count: %d", totalWIPTestCount),
 		})
 
 	return csvRows
