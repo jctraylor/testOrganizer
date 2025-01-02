@@ -104,6 +104,8 @@ func main() {
 			prevIndexText := describeSegments[index-1]
 			slice := []string{prevIndexText}
 			isThisDescribeSkipped := isMatchSkipped(slice)
+			// logging to help with debugging
+			// fmt.Printf("Processing spec %s", spec.Path)
 			describeText := getRegexMatches(segment, `["'\x60]([^"'\x60]+)["'\x60]`)[0]
 			// create regexp objects we'll use to find it's and describes
 			// this pattern matches on whitespace OR 'x', followed by "it(" or "describe(" followed by either `, ", or ',
@@ -246,7 +248,20 @@ func fetchSpecContent(spec Article, repoName string) string {
 }
 
 func splitIntoDescribes(fileContent string) []string {
-	return strings.SplitAfter(fileContent, "describe(")
+	// found that tests inside of describe.skip were missing - so adding handling for that case
+	dotSkippedDescribes := strings.SplitAfter(fileContent, "describe.skip(")
+	allOtherDescribes := strings.SplitAfter(fileContent, "describe(")
+	if len(dotSkippedDescribes) > 1 && len(allOtherDescribes) > 1 {
+		fmt.Println("found skipped and not skipped describes - handle that")
+		// append segments except for first index in dotskipped to allothers
+		// a := dotSkippedDescribes[1:];
+		return append(allOtherDescribes, dotSkippedDescribes[1:]...);
+	} else if len(dotSkippedDescribes) == 1 {
+		return allOtherDescribes
+	} else {
+		return dotSkippedDescribes
+	}
+	
 }
 
 func getRegexMatches(str string, pattern string) [][]string {
@@ -348,7 +363,7 @@ func writeCSV(csvRows [][]string) {
 }
 
 func isMatchSkipped(match []string) bool {
-	re, err := regexp.Compile(`xit|xdescribe`) 
+	re, err := regexp.Compile(`xit|xdescribe|it.skip|describe.skip`) 
 			if err != nil {
 				fmt.Println(err)
 			}
