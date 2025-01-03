@@ -95,7 +95,7 @@ func main() {
 		// fetch the content of the current spec
 		fileContent := fetchSpecContent(spec, repoName)
 		fileContentRequestCount++
-		describeSegments := splitIntoDescribes((fileContent))
+		describeSegments := splitIntoDescribes(fileContent)
 		for index, segment := range describeSegments {
 			// this is kind of odd but gonna start processing on index 1
 			if (index == 0) {
@@ -106,12 +106,12 @@ func main() {
 			isThisDescribeSkipped := isMatchSkipped(slice)
 			// logging to help with debugging
 			// fmt.Printf("Processing spec %s", spec.Path)
-			// TODO: I think this pattern needs to include describe - it's finding too much that isn't what we want
+			// at this point 'segment' will be the text that follows either describe or describe.skip
+			// so this regex grabs the first text in quotes (or back ticks) - which should be the text of the describe
 			describeText := getRegexMatches(segment, `["'\x60]([^"'\x60]+)["'\x60]`)[0]
-			// create regexp objects we'll use to find it's and describes
-			// this pattern matches on whitespace OR 'x', followed by "it(" or "describe(" followed by either `, ", or ',
+			// this next pattern matches on whitespace OR 'x', followed by "it(" or "it.skip(" followed by either `, ", or ',
 			// then it captures everything after the single/double quote or backtick up to the next single/double quote or backtick
-			// which should give us the test/describe text (\x60 is backtick)
+			// which should give us the test "name" text (\x60 is backtick)
 			foundTests := getRegexMatches(segment, `[\sx]+it(?:.skip)?\(["'\x60]([^"'\x60]+)["'\x60]`)
 			for _, test := range foundTests {
 				isTestSkipped := isMatchSkipped(test)
@@ -150,8 +150,7 @@ func main() {
 	fmt.Printf("Fetched the content of %d specs via github api\n", fileContentRequestCount)
 	fmt.Printf("%d tests were found in %d repos and written to ./organizedTests.csv\n", totalTestCount, len(organizedTests))
 
-	// ok now how do I write that nice struct out to a csv file?
-	// start by creating the array of arrays of strings I'd like to write to the file
+	// start building csv by creating the array of arrays of strings I'd like to write to the file
 	var csvRows = buildCSVRows(organizedTests)
 	// Create a new csv file
 	writeCSV(csvRows)
@@ -274,18 +273,8 @@ func getRegexMatches(str string, pattern string) [][]string {
 }
 
 func createCSVRowForTest(spec Spec, repoName string, test Test) []string {
-	specPath := spec.Path
-	specURL := spec.URL
-	// increment count of tests for repo summary data row
-	repoTestCount++
-	if (test.TestSkipped || test.DescribeSkipped) {
-		repoSkippedTestCount++
-	}
-	if (spec.Type == "WIP") {
-		repoWIPTestCount++
-	}
 	//  - spec path will hyperlink to spec
-	row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", specURL), fmt.Sprintf("\"%s\"", specPath)), spec.Type, test.Describe, test.Name, fmt.Sprintf("%t", test.DescribeSkipped), fmt.Sprintf("%t", test.TestSkipped)}
+	row := []string{repoName,fmt.Sprintf("=HYPERLINK(%s,%s)", fmt.Sprintf("\"%s\"", spec.URL), fmt.Sprintf("\"%s\"", spec.Path)), spec.Type, test.Describe, test.Name, fmt.Sprintf("%t", test.DescribeSkipped), fmt.Sprintf("%t", test.TestSkipped)}
 	return row;
 }
 
@@ -313,6 +302,14 @@ func buildCSVRows(organizedTests map[string]Repo) [][]string {
 		for _, spec := range organizedTests[repo].Specs {
 			totalSpecCount++
 			for _, test := range spec.Tests {
+				// increment counts for repo summary data row
+				repoTestCount++
+				if (test.TestSkipped || test.DescribeSkipped) {
+					repoSkippedTestCount++
+				}
+				if (spec.Type == "WIP") {
+					repoWIPTestCount++
+				}
 				// add a row to our csv data for each test
 				csvRows = append(csvRows, createCSVRowForTest(spec, repoName, test))
 			}
