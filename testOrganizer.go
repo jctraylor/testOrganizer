@@ -106,12 +106,13 @@ func main() {
 			isThisDescribeSkipped := isMatchSkipped(slice)
 			// logging to help with debugging
 			// fmt.Printf("Processing spec %s", spec.Path)
+			// TODO: I think this pattern needs to include describe - it's finding too much that isn't what we want
 			describeText := getRegexMatches(segment, `["'\x60]([^"'\x60]+)["'\x60]`)[0]
 			// create regexp objects we'll use to find it's and describes
 			// this pattern matches on whitespace OR 'x', followed by "it(" or "describe(" followed by either `, ", or ',
 			// then it captures everything after the single/double quote or backtick up to the next single/double quote or backtick
 			// which should give us the test/describe text (\x60 is backtick)
-			foundTests := getRegexMatches(segment, `[\sx]+it\(["'\x60]([^"'\x60]+)["'\x60]`)
+			foundTests := getRegexMatches(segment, `[\sx]+it(?:.skip)?\(["'\x60]([^"'\x60]+)["'\x60]`)
 			for _, test := range foundTests {
 				isTestSkipped := isMatchSkipped(test)
 				if (isTestSkipped || isThisDescribeSkipped) {
@@ -252,9 +253,9 @@ func splitIntoDescribes(fileContent string) []string {
 	dotSkippedDescribes := strings.SplitAfter(fileContent, "describe.skip(")
 	allOtherDescribes := strings.SplitAfter(fileContent, "describe(")
 	if len(dotSkippedDescribes) > 1 && len(allOtherDescribes) > 1 {
-		fmt.Println("found skipped and not skipped describes - handle that")
-		// append segments except for first index in dotskipped to allothers
-		// a := dotSkippedDescribes[1:];
+		// haven't run into this so wanna log if we do
+		fmt.Println("Found skipped and not skipped describes - how'd we handle that?")
+		// append segments except for first index in dotskipped to allothers - and return that
 		return append(allOtherDescribes, dotSkippedDescribes[1:]...);
 	} else if len(dotSkippedDescribes) == 1 {
 		return allOtherDescribes
@@ -362,6 +363,7 @@ func writeCSV(csvRows [][]string) {
 	}
 }
 
+// TODO: prob better if this just takes a string instead of a slice of strings
 func isMatchSkipped(match []string) bool {
 	re, err := regexp.Compile(`xit|xdescribe|it.skip|describe.skip`) 
 			if err != nil {
